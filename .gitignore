@@ -1,0 +1,57 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+eggs/
+.eggs/
+sdist/
+wheels/
+MANIFEST
+
+# Virtual environments & env files
+.env
+.env.*
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Python version
+.python-version
+
+# Testing & coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+.pytest_cache/
+
+# Project data
+logs/
+data/
+legacy/
+temp.*
+
+# IDE / Editor
+.vscode/
+.editor/
+.cursor/
+.idea/
+.trae/
+.reasonix/
+*.code-workspace
+
+# Project files (others)
+nodes-beta/
+apps/
