@@ -1,178 +1,80 @@
-# 示例应用 (AuroraBot-App-Template)
+# 日历与主动提醒 MCP App
 
-**包名**: `im.polaris.example`
+包名：`org.aurora.calendar`。Bot 通过显式工具管理自己的本地日程；
+到期提醒作为外部事实进入她的世界，不建立另一套 Agent 或 Task。
 
-**版本**: 0.1.0
+## 工具
 
-**最低 Brain 版本**: >=4.1.0
+| raw name | 参数 | 语义 |
+| --- | --- | --- |
+| create_event | event_id、title、start、end；可选 description、remind_at | 同 ID 同内容幂等；冲突拒绝覆盖 |
+| get_event | event_id | 返回 found 和 event |
+| list_events | start、end | 返回与半开区间 [start,end) 重叠的日程 |
+| update_event | 同 create_event | 完整替换；省略 description 清空说明，省略 remind_at 取消提醒 |
+| delete_event | event_id | 删除日程和待提醒；不存在时 deleted=false |
 
-Aurora 应用的模板项目, 用于演示应用的最小结构及 PlatformAPI 的主要用法。包含静态命令、动态注册命令、事件上报、日志输出和 app-data 持久化示例。
+ID 为 1–80 位字母、数字、下划线、连字符。标题非空、最多 200 字符；说明最多 10000 字符。
+时间格式为带偏移的 ISO 8601，例如 2026-09-05T10:00:00+08:00 或 2026-09-05T02:00:00Z。
+必须 end>start、remind_at<=start；不猜测本机时区。查询比较绝对时间。
+当前不支持全天、周期重复、外部日历同步、多用户共享或跨进程并发写入。
 
----
+## 主动提醒
 
-## 指令
+Server 声明 `org.aurorabot/world-events: {"version":1}`。
+Host 配置 event_mode=world_events、transport=stdio，且请求信封严格声明该扩展版本时才绑定通知通道。
+主循环每秒检查到期日程；业务 kind 为 calendar.reminder.due，scope 为 calendar:personal。
+全部日程工具的 observe/publish 都声明同一业务 scope，让新提醒进入相同的世界更新判定。
 
-### `echo_message` -- 回显文本
+先保存 reminder_attempted_at，再发送通知。字段只代表尝试，不代表 Host 已接收，更不代表用户已看到。
+同一内容的提醒用稳定 event_id；本次连接之前错过的提醒不补发，发送失败不重试。
+进程在记录尝试后、真正发送前崩溃，可能丢失该提醒。这是明确的 best-effort 边界，不用于必须送达的关键闹钟。
+修改日程内容或提醒时间会形成新的提醒身份；完全相同的更新保留已有尝试状态。
+取消/删除只能阻止尚未尝试的通知，不能撤回已经发出的通知。
 
-回显一段文本, 并上报 `example.echoed` 事件。
+Host 必须先将通知写为 mcp.event.received，cadence 再匹配
+source=mcp:org.aurora.calendar、event_kind=calendar.reminder.due，唤起 builtin.root。
+当前个人配置已添加该 reactive 规则且没有关键词过滤。
+本地启动期间可以看到 Cadence 输出；发 QQ 等外部渠道仍须 Bot 显式调用有权限的发送工具。
+本 App 本身不会弹桌面通知，也不能保证模型一定回复。
 
-| 参数                 | 类型    | 必填 | 说明                             |
-| -------------------- | ------- | ---- | -------------------------------- |
-| `text`               | string  | 是   | 要回显的文本                     |
-| `session_id`         | string  | 否   | 可选会话 ID                      |
-| `use_post_intention` | boolean | 否   | 是否通过 post_intention 上报事件 |
+## 配置和示例
 
-| 返回字段      | 类型    | 说明           |
-| ------------- | ------- | -------------- |
-| `ok`          | boolean | 是否执行成功   |
-| `echoed_text` | string  | 实际回显的文本 |
-| `package`     | string  | 当前应用包名   |
+`AURORA_CALENDAR_DATA_DIR` 默认为 App 目录下 data，文件为 events.json，格式版本 1。
+损坏或未知版本拒绝覆盖；写入采用同目录临时文件及原子 replace。一个目录只供一个 Server 进程使用。
 
-### `save_note` -- 保存笔记
-
-将一条笔记写入 app-data, 并按需发出 `example.note_saved` 事件。
-
-| 参数         | 类型    | 必填 | 说明             |
-| ------------ | ------- | ---- | ---------------- |
-| `title`      | string  | 是   | 笔记标题         |
-| `content`    | string  | 是   | 笔记内容         |
-| `emit_event` | boolean | 否   | 是否发出保存事件 |
-
-| 返回字段     | 类型    | 说明             |
-| ------------ | ------- | ---------------- |
-| `ok`         | boolean | 是否保存成功     |
-| `note_count` | number  | 当前累计笔记条数 |
-
-### `publish_demo_event` -- 发布自定义事件
-
-主动发出一个自定义事件, 演示应用如何向内核上报事件。
-
-| 参数         | 类型   | 必填 | 说明                            |
-| ------------ | ------ | ---- | ------------------------------- |
-| `event_type` | string | 否   | 事件类型, 默认 `example.custom` |
-| `summary`    | string | 否   | 事件摘要                        |
-| `session_id` | string | 否   | 可选会话 ID                     |
-
-| 返回字段       | 类型    | 说明               |
-| -------------- | ------- | ------------------ |
-| `ok`           | boolean | 是否执行成功       |
-| `emitted_type` | string  | 实际发出的事件类型 |
-
-### `dynamic_ping` -- 动态注册的 Ping 命令
-
-运行时通过 `PlatformAPI.register_command()` 动态注册, 演示非 manifest 声明式注册。
-
-| 参数    | 类型   | 必填 | 说明      |
-| ------- | ------ | ---- | --------- |
-| `topic` | string | 否   | ping 主题 |
-
-| 返回字段  | 类型    | 说明          |
-| --------- | ------- | ------------- |
-| `ok`      | boolean | 是否成功      |
-| `message` | string  | pong 响应消息 |
-
----
-
-## 展示的能力
-
-### 生命周期接口
-
-模板实现了 Aurora 应用完整的生命周期回调:
-
-- `manifest_path()` -- 返回 manifest.yaml 路径, 框架据此加载声明式配置
-- `on_start()` -- 应用启动时调用, 加载持久化数据、上报 `example.started` 事件
-- `on_stop()` -- 应用停止时调用, 保存数据到磁盘
-- `on_tick()` -- 周期性调用 (每 30 tick 写入一次状态快照)
-
-### PlatformAPI 用法示例
-
-通过 `_bind()` 注入的 `PlatformAPI` 提供了以下能力, 模板均有演示:
-
-| API                      | 用途                         | 示例位置                                              |
-| ------------------------ | ---------------------------- | ----------------------------------------------------- |
-| `api.emit_event()`       | 向内核发送事件               | `echo_message` / `save_note` / `publish_demo_event`   |
-| `api.post_intention()`   | 向内核提交意图 (Intent 语义) | `on_start` / `echo_message` (use_post_intention=true) |
-| `api.register_command()` | 运行时动态注册命令           | `_bind` 中的 `dynamic_ping`                           |
-| `api.log()`              | 结构化日志输出               | 各个方法中均有调用                                    |
-| `api.package`            | 当前应用的包名               | 多处使用                                              |
-| `api.data_dir`           | 应用专属数据目录             | `_bind` 中初始化文件路径                              |
-
-### 命令注册方式对比
-
-| 方式                        | 命令                                                | 说明                                                                    |
-| --------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------- |
-| 静态声明 (manifest.yaml)    | `echo_message` / `save_note` / `publish_demo_event` | 在 manifest 的 `commands` 中声明, 框架自动注册                          |
-| 动态注册 (register_command) | `dynamic_ping`                                      | 运行时在 `_bind()` 中通过 API 注册, 适合参数/逻辑在运行期才能确定的场景 |
-
-### 事件流
-
-应用发出的事件:
-
-| 事件类型             | 触发时机                                 |
-| -------------------- | ---------------------------------------- |
-| `example.started`    | 启动时 (通过 `post_intention`)           |
-| `example.echoed`     | 执行 `echo_message` 后                   |
-| `example.note_saved` | 执行 `save_note` 且 `emit_event=true` 时 |
-| `example.custom`     | 执行 `publish_demo_event` 时 (默认)      |
-
-### app-data 持久化
-
-应用数据目录: `data/app_data/im_polaris_example/`
-
-| 文件         | 说明                                             |
-| ------------ | ------------------------------------------------ |
-| `notes.json` | `save_note` 产生的持久化笔记数据                 |
-| `state.json` | 生命周期状态快照 (tick 计数 / 笔记数 / 最后状态) |
-
----
-
-## 使用
-
-### 作为模板创建新应用
-
-1. 在 GitHub 上 Fork 本仓库
-
-   ![alt text](assets/step1-1.png)
-
-   ![alt text](assets/step1-2.png)
-
-2. 选择右上角使用此模板
-
-   ![alt text](assets/step2-1.png)
-
-   ![alt text](assets/step2-2.png)
-
-3. 将仓库克隆到 AuroraBot 的 `apps/` 目录下:
-
-   ```bash
-   git clone <你的仓库地址> apps/aurora-app-*
-   ```
-
-4. 修改 `manifest.yaml`:
-   - `package` -- 改为你的包名 (如 `im.polaris.mine`)
-   - `name` -- 改为你的应用名称
-   - `version` -- 设为初始版本
-   - `commands` -- 替换为你的命令定义
-
-5. 修改 `runtime.py`:
-   - 类名改为你的应用类名
-   - 实现你的生命周期逻辑和命令处理函数
-
-6. 删除不需要的示例代码, 保留你需要的骨架
-
-### 在 config.yml 中启用
-
-```yaml
-apps:
-  example:
-    enabled: true
-    startup:
-      greeting: hello from example
-      emit_startup_event: true
-  # //其他应用//
+```json
+{
+  "event_id": "team-meeting-20260905",
+  "title": "项目例会",
+  "start": "2026-09-05T10:00:00+08:00",
+  "end": "2026-09-05T11:00:00+08:00",
+  "description": "讨论 MCP 应用",
+  "remind_at": "2026-09-05T09:50:00+08:00"
+}
 ```
 
-启动参数说明:
+调用名：create_event。最终领域 ID：aur.mcp.org.aurora.calendar.create_event。
 
-- `greeting` -- 启动时 `example.started` 事件携带的欢迎文本
-- `emit_startup_event` -- 是否在启动时发出 `example.started` 事件
+## 运行与接入
+
+需要 Python 3.12–3.14 和官方 MCP Python SDK 2.x。在 App 目录运行：
+
+```powershell
+uv run python mcp_server.py
+```
+
+也可以使用已安装依赖的 Python 直接运行入口。本机 AuroraBot 的个人
+`config/apps.toml` 已使用 `D:/AuroraBot/.venv/Scripts/python.exe`，
+因此不会因为 App 有自己的 pyproject.toml 而意外切换环境。移动仓库后需同步更新个人启动路径。
+测试：在 App 目录运行 `uv run --group dev pytest -q -p no:cacheprovider`。
+主仓库的 `aurora check` 不包含被忽略的 extensions，需要单独运行这些测试。
+
+Host 通过 tools/list 获取定义，不读取 manifest.yaml 或 config.example.json；
+这两个文件不负责启动配置。个人配置只放在 config，不修改主仓库 config.example。
+Agent 必须在 config/agents.toml 的 tools 中获得对应 `aur.mcp.<package>.*`。
+仅 builtin.worker 被授予本组业务工具，root 可以委派给它。
+
+stdout 只输出 MCP JSON-RPC；日志走 stderr。工具返回 CallToolResult 的文本和 structuredContent。
+Server 声明 `org.aurorabot/tool-contract: {"version":1}`：
+参数/业务拒绝为 failed；无法确认写入结果时返回 unknown，不能自动重试。
+SDK 和 Host 自动协商协议，代码不手写握手或伪装协议版本。
