@@ -1,0 +1,34 @@
+[project]
+name = "aurora-app-calendar"
+version = "1.0.0"
+description = "AuroraBot 的独立 MCP 2 calendar 工具"
+requires-python = ">=3.12,<3.15"
+dependencies = ["mcp>=2,<3", "pydantic>=2.12,<3"]
+
+[project.scripts]
+aurora-calendar-mcp = "aurora_calendar.server:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["aurora_calendar*"]
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C90"]
+
+[tool.ruff.format]
+line-ending = "lf"
